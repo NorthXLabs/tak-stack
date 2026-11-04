@@ -60,6 +60,16 @@ Each step only does what's missing, so restarts are safe. To add a user, add a n
 
 The package holds only the server address and the CA certificates, so you can share it with the whole team. For a device that can't enroll, add it to `CLIENT_CERTS` and use `./make-datapackage.sh --with-cert <user> <address>`. That package contains the user's certificate and password, so share it only with that user.
 
+## Testing with Android emulators
+
+You can test with ATAK in Android Studio's emulators, as long as you allow for a few emulator quirks.
+
+- **Server address:** an emulator reaches the computer it runs on at `10.0.2.2`. Add it to `SERVER_ADDRESSES`, for example `SERVER_ADDRESSES=localhost 10.0.2.2`, then run `docker compose up -d` to reissue the server certificate. Build the package for that address with `./make-datapackage.sh 10.0.2.2`.
+- **Copying the package:** `adb push datapackages/enroll-10.0.2.2.zip /sdcard/Download/`
+- **Apple Silicon Macs:** ATAK won't open until you create an empty file at `/sdcard/atak/opengl.broken`. Run `adb shell 'mkdir -p /sdcard/atak && touch /sdcard/atak/opengl.broken'`, then start ATAK.
+- **One device per emulator:** create each emulator new, rather than duplicating one. Duplicates share a device ID, so they never see each other on the map.
+- **Use more than one emulator:** `adb devices` lists them, and `adb -s <name>` targets one.
+
 ## Useful commands
 
 ```sh
