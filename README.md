@@ -7,6 +7,7 @@ Open source tooling and examples for the TAK (Team Awareness Kit) ecosystem, bui
 | Folder | What it does |
 |---|---|
 | [`integrations/hello-cot`](integrations/hello-cot) | Listen to a TAK mesh and put a moving vehicle on the map |
+| [`compose/takserver`](compose/takserver) | Run TAK Server in Docker Compose, with certificates created from configuration |
 
 ## License
 

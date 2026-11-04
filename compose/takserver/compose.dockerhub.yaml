@@ -1,0 +1,20 @@
+# Uses the TAK Product Center's images from Docker Hub instead of building them.
+# These images are Intel (amd64) only. On ARM machines they run under emulation.
+#
+#   docker compose -f compose.yaml -f compose.dockerhub.yaml up -d
+
+services:
+  tak-certs:
+    image: takproductcenter/takserver-ca:${TAK_VERSION:?Run ./setup.sh first}
+    build: !reset null
+    platform: linux/amd64
+
+  tak-database:
+    image: takproductcenter/takserver-hardened-db:${TAK_VERSION:?Run ./setup.sh first}
+    build: !reset null
+    platform: linux/amd64
+
+  takserver:
+    image: takproductcenter/takserver-hardened:${TAK_VERSION:?Run ./setup.sh first}
+    build: !reset null
+    platform: linux/amd64
