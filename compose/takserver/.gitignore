@@ -1,0 +1,5 @@
+config/secrets.env
+.env
+datapackages/
+release/*
+!release/README.md

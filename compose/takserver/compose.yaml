@@ -1,0 +1,78 @@
+name: takserver
+
+# Builds images from the TAK Server release in ./release.
+# To use the Docker Hub images instead, add: -f compose.dockerhub.yaml
+
+x-config: &config
+  env_file:
+    - config/takserver.env
+    - config/secrets.env
+
+services:
+  # Runs on every start, creates any missing certificates, then exits.
+  tak-certs:
+    image: tak-stack/takserver-ca:${TAK_VERSION:?Run ./setup.sh first}
+    build:
+      context: ./release
+      dockerfile: docker/Dockerfile.ca
+    <<: *config
+    user: root
+    entrypoint: ["/bin/bash", "/init/init-certs.sh"]
+    volumes:
+      - ./init:/init:ro
+      - tak-certs:/tak/certs/files
+
+  tak-database:
+    image: tak-stack/takserver-db:${TAK_VERSION:?Run ./setup.sh first}
+    build:
+      context: ./release
+      dockerfile: docker/Dockerfile.hardened-takserver-db
+    <<: *config
+    entrypoint: ["/bin/bash", "/init/start-database.sh"]
+    volumes:
+      - ./init:/init:ro
+      - tak-db:/var/lib/postgresql/data
+    # The image's own check also verifies file checksums, which fails on current
+    # base images. Check that the database accepts connections instead.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  takserver:
+    image: tak-stack/takserver:${TAK_VERSION:?Run ./setup.sh first}
+    build:
+      context: ./release
+      dockerfile: docker/Dockerfile.hardened-takserver
+      args:
+        # The release pins an older base image whose OpenSSL is now too old for
+        # current security updates. Use the latest Java 17 base image instead.
+        BASE_DEPLOY_TAG: 17-jdk-ubi10-minimal
+    <<: *config
+    entrypoint: ["/bin/bash", "/init/start-takserver.sh"]
+    depends_on:
+      tak-certs:
+        condition: service_completed_successfully
+      tak-database:
+        condition: service_healthy
+    volumes:
+      - ./init:/init:ro
+      - tak-certs:/opt/tak/certs/files
+      - tak-logs:/opt/tak/logs
+    ports:
+      - "8089:8089"   # Streaming CoT from TAK clients, over TLS
+      - "8443:8443"   # Web admin and API, needs a client certificate
+      - "8446:8446"   # Certificate enrollment
+    # Healthy once the API answers over HTTPS with the admin certificate.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -ks -o /dev/null -w '%{http_code}' --cert-type P12 --cert /opt/tak/certs/files/$${ADMIN_CERT_NAME}.p12:$${ADMIN_CERT_PASS} https://localhost:8443/Marti/api/missions | grep -q 200"]
+      start_period: 180s
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+volumes:
+  tak-certs:
+  tak-db:
+  tak-logs:
