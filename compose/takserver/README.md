@@ -58,7 +58,16 @@ Each step only does what's missing, so restarts are safe. To add a user, add a n
 
 4. Import `datapackages/enroll-192.168.1.50.zip` in ATAK. Each person signs in with their own username and password from `config/secrets.env`, and ATAK requests its own certificate.
 
-The package holds only the server address and the CA certificates, so you can share it with the whole team. For a device that can't enroll, add it to `CLIENT_CERTS` and use `./make-datapackage.sh --with-cert <user> <address>`. That package contains the user's certificate and password, so share it only with that user.
+The package holds only the server address and the CA certificates, so you can share it with the whole team.
+
+### Certificates made in advance
+
+`CLIENT_CERTS` lists certificates the server makes ahead of time, for devices that can't reach port 8446 and for services such as data feeds. Names don't need to be in `USERS`.
+
+- Each certificate is a `.p12` with the private key inside, protected by the shared `CLIENT_CERT_PASS`. It lasts 2 years, where enrolled certificates last 1.
+- For ATAK, build a package with `./make-datapackage.sh --with-cert <name> <address>`. It holds the private key and password, so share it only with that device.
+- For anything else, copy `/opt/tak/certs/files/<name>.p12` out of the container.
+- Removing a name stops new certificates being made, but doesn't revoke the existing one.
 
 ## Testing with Android emulators
 
