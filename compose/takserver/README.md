@@ -67,7 +67,44 @@ The package holds only the server address and the CA certificates, so you can sh
 - Each certificate is a `.p12` with the private key inside, protected by the shared `CLIENT_CERT_PASS`. It lasts 2 years, where enrolled certificates last 1.
 - For ATAK, build a package with `./make-datapackage.sh --with-cert <name> <address>`. It holds the private key and password, so share it only with that device.
 - For anything else, copy `/opt/tak/certs/files/<name>.p12` out of the container.
-- Removing a name stops new certificates being made, but doesn't revoke the existing one.
+- Removing a name stops new certificates being made, but doesn't revoke the existing one. Use `REVOKE` for that.
+
+## Locking a device out
+
+Two ways, and they do different things:
+
+| | Admin console: **Client Certificates → Revoke** | `REVOKE=<name>` in `config/takserver.env` |
+|---|---|---|
+| Takes effect | Immediately: the device is disconnected and refused | On `docker compose up -d` |
+| Enrolled certificates | The one you pick | Every one issued to that name |
+| Certificates made in advance | Not listed in the console | Revoked |
+| Can the user enroll again? | Yes, with their password | No: the user is deleted |
+
+To lock someone out for good, use `REVOKE`. To let them back in, remove the name and run `docker compose up -d`. They enroll again for a new certificate. A name in both `REVOKE` and `CLIENT_CERTS` gets a new certificate made in advance once you remove it from `REVOKE`.
+
+Revoked certificates are refused in two places. The server checks enrolled certificates against its database on every connection, and every certificate against the revocation lists. The lists are rebuilt on each start.
+
+## Groups
+
+`USER_GROUPS` puts names into groups, for example `USER_GROUPS=alpha-1:blue bravo-1:blue charlie-1:red`. Through the server, devices only share with devices in a group they have in common. Names with no group share in the default group, `__ANON__`. Changes apply on `docker compose up -d`, when devices reconnect.
+
+Groups only apply to traffic through the server. Devices on the same network still share over the mesh unless you turn it off in ATAK.
+
+## Rotating the certificate authorities
+
+`./rotate-ca.sh` replaces the CAs in stages, so devices keep working while they move over. Each step restarts the server, and devices reconnected within two to three minutes in our tests.
+
+```sh
+./rotate-ca.sh status         # each CA and when it expires
+./rotate-ca.sh intermediate   # new intermediate CA, signed by the same root
+./rotate-ca.sh root           # new root and intermediate. Change CA_NAME first
+./rotate-ca.sh retire         # stop trusting the old ones
+```
+
+1. Run `intermediate` or `root`. The old CA stays trusted, and the server keeps its current certificate, so connected devices carry on. The admin certificate and any `CLIENT_CERTS` are reissued by the new CA. The old files go to `superseded/`.
+2. Build a new package with `./make-datapackage.sh <address>`. It trusts the old and new CAs.
+3. On each device, remove the server connection, then import the new package and sign in. ATAK only applies a package's truststore to a new connection, and it needs the new intermediate in its truststore before the server switches. Import `admin.p12` in your browser again, and rebuild any `--with-cert` packages.
+4. Run `retire`. The server gets a certificate from the new CA, and anything still using an old certificate is refused. Retiring an intermediate also revokes it in the root's revocation list.
 
 ## Testing with Android emulators
 
@@ -87,6 +124,7 @@ docker compose logs -f takserver         # follow the server log
 docker compose cp takserver:/opt/tak/certs/files/admin.p12 .   # copy a certificate out
 docker compose down                      # stop, keeping data and certificates
 docker compose down -v                   # stop and delete everything, including your CA
+./rotate-ca.sh status                    # each CA and when it expires
 ```
 
 ## Fixes this setup applies
@@ -97,7 +135,8 @@ The release works as shipped on the day it's built, but some parts have aged. Th
 - **Health checks:** the images' checks also verify file checksums, which fail on current base images. These checks test the services instead.
 - **Database:** the Docker Hub database image ships with an empty data folder, so the database is created on first start.
 - **Admin certificate:** registration waits for the server to finish starting, instead of a fixed delay.
-- **Truststores:** client certificates are signed by the intermediate CA, so both the server and the packages use `truststore-intermediate`, which holds the root and the intermediate. Upstream's default `truststore-root` makes enrolled devices fail to connect.
+- **Truststores:** client certificates are signed by the intermediate CA, so both the server and the packages use `truststore-active`, which holds the root and the intermediate, plus the old ones during a rotation. Upstream's default `truststore-root` makes enrolled devices fail to connect.
+- **Revocation:** upstream ships with revocation checks off. This setup turns on `x509checkRevocation`, gives the server a revocation list for each CA, and points the console's Revoke button at the intermediate CA. The web ports read only the first list, so the first entry holds all of them.
 - **Server addresses:** upstream's server certificate names only `takserver`. ATAK checks the certificate against the address it dialled, so the certificate names every address in `SERVER_ADDRESSES`.
 
 On restart, the database log shows "Database 'cot' already exists" and "Aborting". That's an upstream setup step skipping itself, and it's harmless.
