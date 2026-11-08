@@ -97,9 +97,9 @@ manifest = f"""<MissionPackageManifest version="2">
 with zipfile.ZipFile(f"/tmp/{name}.zip", "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("MANIFEST/manifest.xml", manifest)
     z.writestr("certs/server.pref", server_pref)
-    # The intermediate CA signs the server's certificate, so clients need a
-    # truststore holding both it and the root. makeCert.sh builds exactly that.
-    z.write(f"{files}/truststore-intermediate.p12", "certs/truststore.p12")
+    # Every CA the server trusts: the root and intermediate, plus the old ones
+    # during a CA rotation, so devices trust the server before and after.
+    z.write(f"{files}/truststore-active.p12", "certs/truststore.p12")
     if user:
         z.write(f"{files}/{user}.p12", f"certs/{user}.p12")
 PY

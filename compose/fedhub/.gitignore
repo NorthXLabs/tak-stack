@@ -1,0 +1,7 @@
+release/*
+!release/README.md
+config/secrets.env
+config/federation/*.pem
+.env
+/*.pem
+/*.p12

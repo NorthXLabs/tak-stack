@@ -1,0 +1,64 @@
+name: feeds
+
+# Data feeds for the TAK Server in compose/takserver. Run ./setup.sh first.
+# Each feed connects to TAK Server with its own certificate, so you can see,
+# group and revoke each one on its own.
+
+x-feed: &feed
+  build: .
+  image: tak-stack/feeds
+  restart: unless-stopped
+  env_file: .env
+  networks: [default, takserver]
+
+services:
+  adsb:
+    <<: *feed
+    command: ["python", "adsb.py"]
+    environment:
+      FEED_CERT: /certs/feed-adsb.pem
+      FEED_KEY: /certs/feed-adsb.key
+      TAK_CA: /certs/tak-ca.pem
+    volumes:
+      - ./certs:/certs:ro
+
+  ais:
+    <<: *feed
+    command: ["python", "ais.py"]
+    environment:
+      FEED_CERT: /certs/feed-ais.pem
+      FEED_KEY: /certs/feed-ais.key
+      TAK_CA: /certs/tak-ca.pem
+    volumes:
+      - ./certs:/certs:ro
+
+  tracker:
+    <<: *feed
+    command: ["python", "mqtt_tracker.py"]
+    depends_on: [mosquitto]
+    environment:
+      FEED_CERT: /certs/feed-tracker.pem
+      FEED_KEY: /certs/feed-tracker.key
+      TAK_CA: /certs/tak-ca.pem
+    volumes:
+      - ./certs:/certs:ro
+
+  # An MQTT broker for trackers to publish to.
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "127.0.0.1:1883:1883"   # only from this computer
+
+  # A pretend tractor, publishing to the broker. Remove it when you have real trackers.
+  tractor:
+    <<: *feed
+    command: ["python", "tractor_sim.py"]
+    depends_on: [mosquitto, tracker]
+
+networks:
+  takserver:
+    name: takserver_default
+    external: true

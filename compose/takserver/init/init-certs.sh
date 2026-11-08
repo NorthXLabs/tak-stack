@@ -1,41 +1,31 @@
 #!/usr/bin/env bash
 # Creates TAK Server certificates on first start, and anything added since.
-# Idempotent: existing files are never touched, so it's safe on every start.
+# Idempotent: existing certificates are never replaced, so it's safe on every
+# start. Also refreshes the revocation lists and the truststore every time.
 set -euo pipefail
 
 : "${CA_NAME:?}" "${CA_PASS:?}" "${STATE:?}" "${CITY:?}" "${ORGANIZATIONAL_UNIT:?}"
 : "${TAKSERVER_CERT_PASS:?}" "${ADMIN_CERT_NAME:?}" "${ADMIN_CERT_PASS:?}"
 
-SCRIPTS=/tak/certs        # certificate scripts, from the image
-FILES=$SCRIPTS/files      # certificates, on a persistent volume
-
-cd "$SCRIPTS"
-# Upstream hard-codes the country. Let configuration set it instead.
-sed -i 's/^COUNTRY=US$/COUNTRY=${COUNTRY:-US}/' cert-metadata.sh
-export CAPASS="$CA_PASS"
+source /init/ca-common.sh
 
 if [[ ! -f "$FILES/root-ca.pem" ]]; then
   echo "Creating root CA: $CA_NAME"
   bash makeRootCa.sh --ca-name "$CA_NAME"
 else
-  echo "Root CA exists"
+  echo "Root CA exists: $(cert_cn "$FILES/root-ca.pem")"
 fi
 
 if [[ ! -f "$FILES/intermediate-signing.jks" ]]; then
   echo "Creating intermediate signing CA"
-  MOVE_CA=true bash makeCert.sh ca intermediate
+  make_intermediate
 else
-  echo "Intermediate CA exists"
+  echo "Intermediate CA exists: $(cert_cn "$FILES/intermediate.pem")"
 fi
 
-# New certificates must be signed by the intermediate CA. This also repairs
-# a run that stopped between creating the intermediate and switching to it.
-if [[ "$(cat "$FILES/ca.pem")" != "$(cat "$FILES/intermediate.pem")" ]]; then
-  echo "Switching signing to the intermediate CA"
-  cp "$FILES/intermediate.pem" "$FILES/ca.pem"
-  cp "$FILES/intermediate.key" "$FILES/ca-do-not-share.key"
-  cp "$FILES/intermediate-trusted.pem" "$FILES/ca-trusted.pem"
-fi
+# New certificates must be signed by the current intermediate CA. This also
+# repairs a run that stopped between creating the intermediate and switching.
+use_intermediate_for_signing
 
 make_cert() {
   local type=$1 name=$2 pass=$3
@@ -73,10 +63,34 @@ if [[ ! -f "$FILES/takserver.pem" ]]; then
 else
   echo "Certificate exists: takserver ($names)"
 fi
+
 make_cert client "$ADMIN_CERT_NAME" "$ADMIN_CERT_PASS"
 for name in ${CLIENT_CERTS:-}; do
+  if is_revoked_name "$name"; then
+    echo "Skipping $name: it's listed in REVOKE"
+    continue
+  fi
   make_cert client "$name" "${CLIENT_CERT_PASS:?CLIENT_CERT_PASS is required for client certificates}"
 done
+
+# Revoke certificates made in advance for each name in REVOKE. Enrolled
+# certificates live in the server's database, so start-takserver.sh revokes
+# those once the server is running.
+for name in ${REVOKE:-}; do
+  if [[ "$name" == "$ADMIN_CERT_NAME" ]]; then
+    echo "Not revoking $name: it's the admin certificate."
+    continue
+  fi
+  if [[ -f "$FILES/$name.pem" ]]; then
+    revoke_file_cert "$name"
+  fi
+done
+
+# Every start: fresh revocation lists, so they never go out of date, and a
+# truststore holding every CA the server currently trusts.
+refresh_crls
+build_truststore
+build_fed_truststore
 
 # TAK Server runs as user 1001.
 chown -R 1001:0 "$FILES"

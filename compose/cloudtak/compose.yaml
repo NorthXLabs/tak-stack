@@ -1,0 +1,9 @@
+name: cloudtak
+
+# Runs CloudTAK from the source in src/ (run ./setup.sh first), with the
+# changes below. CloudTAK's own file is left exactly as released.
+include:
+  - path:
+      - src/docker-compose.yml
+      - cloudtak-changes.yaml
+    env_file: .env

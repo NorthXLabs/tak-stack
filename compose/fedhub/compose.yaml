@@ -1,0 +1,28 @@
+name: fedhub
+
+# Federation Hub, built from the tak.gov release in ./release. Run ./setup.sh first.
+# TAK Servers federate with the hub instead of with each other, and the hub's
+# policy decides what flows between them.
+
+services:
+  fedhub:
+    image: tak-stack/fedhub:${FEDHUB_VERSION:?Run ./setup.sh first}
+    build:
+      context: ./release
+      dockerfile: docker/Dockerfile.fedhub
+    env_file:
+      - config/fedhub.env
+      - config/secrets.env
+    entrypoint: ["/bin/bash", "/init/start-fedhub.sh"]
+    volumes:
+      - ./init:/init:ro
+      - ./release/tak:/opt/tak-release:ro
+      - ./config/federation:/federation:ro
+      - fedhub:/opt/tak/federation-hub
+    ports:
+      - "9100:9100"   # Web interface, needs the admin certificate
+      - "9102:9102"   # Federation with TAK Servers (protocol version 2)
+    restart: unless-stopped
+
+volumes:
+  fedhub:

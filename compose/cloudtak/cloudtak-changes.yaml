@@ -1,0 +1,58 @@
+# Changes to CloudTAK's docker-compose.yml, so it runs beside our TAK Server.
+# Paths here are relative to src/, where CloudTAK's own file is.
+
+services:
+  api:
+    # Port 5000 is taken on macOS (AirPlay), so the web page uses 5080.
+    ports: !override
+      - "5080:5000"
+    # Join TAK Server's network, so CloudTAK reaches it by the name "takserver",
+    # which is already on the server certificate.
+    networks:
+      - default
+      - takserver
+    # Trust our TAK Server's CA, as well as the public CAs. setup.sh saves it.
+    environment:
+      - NODE_EXTRA_CA_CERTS=/etc/tak-ca.pem
+    volumes:
+      - ../tak-ca.pem:/etc/tak-ca.pem:ro
+
+  # The background services call the API inside Docker, not through
+  # localhost, which in their containers is themselves.
+  events:
+    environment:
+      - API_URL=http://api:5000
+  retention:
+    environment:
+      API_URL: http://api:5000
+  media:
+    environment:
+      - API_URL=http://api:5000
+  tiles:
+    environment:
+      - API_URL=http://api:5000
+    # On ARM computers, a map library in the ARM image fails to load
+    # (__libc_single_threaded: symbol not found). The Intel image works, with
+    # Docker emulating it.
+    platform: linux/amd64
+
+  # Keep the database and file store in Docker volumes, so they survive
+  # containers being recreated and src/ being replaced.
+  postgis:
+    volumes:
+      - cloudtak-db:/var/lib/postgresql/data
+  store:
+    volumes: !override
+      - ./garage.toml:/etc/garage.toml:ro
+      - cloudtak-store-meta:/var/lib/garage/meta
+      - cloudtak-store-data:/var/lib/garage/data
+
+volumes:
+  cloudtak-db:
+  cloudtak-store-meta:
+  cloudtak-store-data:
+
+networks:
+  takserver:
+    name: takserver_default
+    external: true
