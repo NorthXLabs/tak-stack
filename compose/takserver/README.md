@@ -80,7 +80,7 @@ Two ways, and they do different things:
 | Certificates made in advance | Not listed in the console | Revoked |
 | Can the user enroll again? | Yes, with their password | No: the user is deleted |
 
-To lock someone out for good, use `REVOKE`. To let them back in, remove the name and run `docker compose up -d`. They enroll again for a new certificate. A name in both `REVOKE` and `CLIENT_CERTS` gets a new certificate made in advance once you remove it from `REVOKE`.
+To lock someone out for good, use `REVOKE`. To let them back in, remove the name and run `docker compose up -d`. They enroll again for a new certificate. A name in both `REVOKE` and `CLIENT_CERTS` gets a new certificate made in advance once you remove it from `REVOKE`. If they use [CloudTAK](../cloudtak), also run `../cloudtak/forget-certificate.sh <name>`.
 
 Revoked certificates are refused in two places. The server checks enrolled certificates against its database on every connection, and every certificate against the revocation lists. The lists are rebuilt on each start.
 
