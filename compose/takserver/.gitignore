@@ -3,3 +3,6 @@ config/secrets.env
 datapackages/
 release/*
 !release/README.md
+config-*/
+/*.pem
+config/federation/*.pem

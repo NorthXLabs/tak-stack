@@ -90,6 +90,21 @@ Revoked certificates are refused in two places. The server checks enrolled certi
 
 Groups only apply to traffic through the server. Devices on the same network still share over the mesh unless you turn it off in ATAK.
 
+## Federation
+
+Federation shares data with another TAK Server, which keeps its own users and certificate authority. Its users can't connect to your server directly.
+
+1. Exchange CAs. `./share-ca.sh` writes yours to a `.pem` file. Put your partner's file in `config/federation/`.
+2. In `config/takserver.env`, set `FEDERATION=true`. On one side only, set `FEDERATE_WITH` to the other server's `address:9001`.
+3. Choose what crosses: `FEDERATION_SHARE` is the groups your partner receives, and `FEDERATION_RECEIVE` is the groups their data joins here. Both default to `__ANON__`, so everything crosses.
+4. Run `docker compose up -d`, and open port 9001 to your partner.
+
+The groups apply when a partner first connects, and are saved with it in `CoreConfig.xml`. Because this setup rebuilds `CoreConfig.xml` on every start, changes apply on the next restart.
+
+To federate through [Federation Hub](../fedhub) instead, put the hub's CA in `config/federation/` and set `FEDERATE_WITH` to the hub's `address:9102`.
+
+To try it on one computer, `./setup.sh --instance b` creates a second, separate server in `config-b/`, with its own CA, no users, certificates or groups of its own yet, and host ports 18089, 18443, 18446 and 19001. Start it with `docker compose --env-file config-b/compose.env up -d`, and point the first one at it with `FEDERATE_WITH=host.docker.internal:19001`.
+
 ## Rotating the certificate authorities
 
 `./rotate-ca.sh` replaces the CAs in stages, so devices keep working while they move over. Each step restarts the server, and devices reconnected within two to three minutes in our tests.
@@ -125,6 +140,7 @@ docker compose cp takserver:/opt/tak/certs/files/admin.p12 .   # copy a certific
 docker compose down                      # stop, keeping data and certificates
 docker compose down -v                   # stop and delete everything, including your CA
 ./rotate-ca.sh status                    # each CA and when it expires
+./share-ca.sh                            # write this server's CA to a file, for federation
 ```
 
 ## Fixes this setup applies

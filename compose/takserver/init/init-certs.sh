@@ -90,6 +90,7 @@ done
 # truststore holding every CA the server currently trusts.
 refresh_crls
 build_truststore
+build_fed_truststore
 
 # TAK Server runs as user 1001.
 chown -R 1001:0 "$FILES"

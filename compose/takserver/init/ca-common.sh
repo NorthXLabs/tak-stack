@@ -143,3 +143,36 @@ build_truststore() {
     -deststorepass "$CAPASS" >/dev/null 2>&1
   echo "Trusted CAs: ${names[*]}"
 }
+
+# Splits the certificates in each /federation/*.pem into /tmp/federation/, one
+# file each, and prints their paths.
+federation_certs() {
+  local f base
+  rm -rf /tmp/federation && mkdir -p /tmp/federation
+  for f in /federation/*.pem; do
+    [[ -f "$f" ]] || continue
+    base=$(basename "$f" .pem)
+    awk -v out="/tmp/federation/$base" '
+      /-----BEGIN CERTIFICATE-----/ { n++; file = out "-" n ".crt" }
+      file { print > file }
+      /-----END CERTIFICATE-----/ { file = "" }' "$f"
+  done
+  ls /tmp/federation/*.crt 2>/dev/null || true
+}
+
+# The federation truststore holds the CAs of the TAK Servers we federate with,
+# from config/federation/. It's separate from truststore-active, so their users
+# can't connect to this server directly. Our own root is always in it.
+build_fed_truststore() {
+  local crt names=()
+  rm -f "$FILES/fed-truststore.jks"
+  openssl x509 -in "$FILES/root-ca.pem" -out /tmp/own-root.crt
+  keytool -importcert -noprompt -alias own-root -file /tmp/own-root.crt \
+    -keystore "$FILES/fed-truststore.jks" -storepass "$CAPASS" >/dev/null
+  for crt in $(federation_certs); do
+    keytool -importcert -noprompt -alias "$(basename "$crt" .crt)" -file "$crt" \
+      -keystore "$FILES/fed-truststore.jks" -storepass "$CAPASS" >/dev/null
+    names+=("$(cert_cn "$crt")")
+  done
+  echo "Federation partner CAs: ${names[*]:-none}"
+}

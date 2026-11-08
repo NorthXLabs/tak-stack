@@ -46,6 +46,48 @@ signing="    <certificateSigning CA=\"TAKServer\">
 awk -v block="$signing" '/^    <security>/ && !done { print block; done=1 } { print }' CoreConfig.xml > CoreConfig.tmp
 mv CoreConfig.tmp CoreConfig.xml
 
+# Federation: share with other TAK Servers. Their CAs are in config/federation/,
+# and init-certs.sh puts them in the federation truststore. The example config
+# has no federation section, so write a whole one.
+if [[ "${FEDERATION:-false}" == true ]]; then
+  # Connect out to each server in FEDERATE_WITH. One side connecting is enough.
+  outgoing=""
+  for peer in ${FEDERATE_WITH:-}; do
+    host=${peer%:*}; port=${peer##*:}
+    outgoing+="        <federation-outgoing displayName=\"$host:$port\" address=\"$host\" port=\"$port\" protocolVersion=\"2\" reconnectInterval=\"30\" enabled=\"true\"/>"$'\n'
+  done
+
+  # A federate whose certificate comes from one of these CAs gets these groups
+  # when it first connects: where its data goes here, and what we share with it.
+  groups=""
+  for g in ${FEDERATION_RECEIVE:-__ANON__}; do groups+="            <inboundGroup>$g</inboundGroup>"$'\n'; done
+  for g in ${FEDERATION_SHARE:-__ANON__}; do groups+="            <outboundGroup>$g</outboundGroup>"$'\n'; done
+  cas=""
+  for f in /federation/*.pem; do
+    [[ -f "$f" ]] || continue
+    while read -r fingerprint; do
+      cas+="        <federateCA fingerprint=\"$fingerprint\">"$'\n'"$groups        </federateCA>"$'\n'
+    done < <(awk '/-----BEGIN CERTIFICATE-----/ { cert = "" } { cert = cert $0 "\n" }
+                  /-----END CERTIFICATE-----/ { printf "%s", cert | "openssl x509 -noout -fingerprint -sha256"; close("openssl x509 -noout -fingerprint -sha256") }' "$f" |
+             cut -d= -f2)
+  done
+
+  # Protocol version 2 only, on port 9001.
+  federation="    <federation enableFederation=\"true\">
+        <federation-server v1enabled=\"false\" v2enabled=\"true\" v2port=\"9001\">
+            <tls context=\"TLSv1.2\" keymanager=\"SunX509\"
+                keystore=\"JKS\" keystoreFile=\"$FILES/takserver.jks\" keystorePass=\"${TAKSERVER_CERT_PASS}\"
+                truststore=\"JKS\" truststoreFile=\"$FILES/fed-truststore.jks\" truststorePass=\"${CA_PASS}\"/>
+        </federation-server>
+$outgoing        <fileFilter>
+            <fileExtension>pref</fileExtension>
+        </fileFilter>
+$cas    </federation>"
+  awk -v block="$federation" '{ print } /^    <\/security>/ && !done { print block; done=1 }' CoreConfig.xml > CoreConfig.tmp
+  mv CoreConfig.tmp CoreConfig.xml
+  echo "Federation on: port 9001, connecting to ${FEDERATE_WITH:-nobody (waiting for others)}, sharing ${FEDERATION_SHARE:-__ANON__}, receiving into ${FEDERATION_RECEIVE:-__ANON__}"
+fi
+
 # The console's Revoke button runs upstream's revokeCert.sh, which needs the
 # CA password.
 export CAPASS="$CA_PASS"

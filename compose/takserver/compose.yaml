@@ -3,10 +3,12 @@ name: takserver
 # Builds images from the TAK Server release in ./release.
 # To use the Docker Hub images instead, add: -f compose.dockerhub.yaml
 
+# TAK_CONFIG picks the settings folder: config/ unless you've set up a second
+# server with ./setup.sh --instance.
 x-config: &config
   env_file:
-    - config/takserver.env
-    - config/secrets.env
+    - ${TAK_CONFIG:-config}/takserver.env
+    - ${TAK_CONFIG:-config}/secrets.env
 
 services:
   # Runs on every start, creates any missing certificates, then exits.
@@ -20,6 +22,7 @@ services:
     entrypoint: ["/bin/bash", "/init/init-certs.sh"]
     volumes:
       - ./init:/init:ro
+      - ./${TAK_CONFIG:-config}/federation:/federation:ro
       - tak-certs:/tak/certs/files
 
   tak-database:
@@ -58,12 +61,18 @@ services:
         condition: service_healthy
     volumes:
       - ./init:/init:ro
+      - ./${TAK_CONFIG:-config}/federation:/federation:ro
       - tak-certs:/opt/tak/certs/files
       - tak-logs:/opt/tak/logs
     ports:
-      - "8089:8089"   # Streaming CoT from TAK clients, over TLS
-      - "8443:8443"   # Web admin and API, needs a client certificate
-      - "8446:8446"   # Certificate enrollment
+      - "${STREAMING_PORT:-8089}:8089"   # Streaming CoT from TAK clients, over TLS
+      - "${WEB_PORT:-8443}:8443"         # Web admin and API, needs a client certificate
+      - "${ENROLL_PORT:-8446}:8446"      # Certificate enrollment
+      - "${FEDERATION_PORT:-9001}:9001"  # Federation with other TAK Servers, when enabled
+    # Lets this server reach other servers on this computer, such as a second
+    # one for testing federation.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Healthy once the API answers over HTTPS with the admin certificate.
     healthcheck:
       test: ["CMD-SHELL", "curl -ks -o /dev/null -w '%{http_code}' --cert-type P12 --cert /opt/tak/certs/files/$${ADMIN_CERT_NAME}.p12:$${ADMIN_CERT_PASS} https://localhost:8443/Marti/api/missions | grep -q 200"]
